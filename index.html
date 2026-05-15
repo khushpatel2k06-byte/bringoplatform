@@ -15,10 +15,1324 @@
     <script type="text/babel">
         // Using global React variables instead of imports
         const { useState, useEffect, useRef } = React;
+        import { useState, useEffect, useRef } from "react";
 
 // ============================================================
 // BRINGO PLATFORM - Complete MVP
+// Customer Website + Admin Dashboard
+// Shared State simulating Supabase real-time backend
 // ============================================================
+
+// ---- MOCK DATABASE (simulates Supabase PostgreSQL) ----
+const DB = {
+  users: [
+    { id: "u1", name: "Priya Sharma", email: "priya@example.com", phone: "9876543210", avatar: "PS", created_at: "2024-01-10" },
+    { id: "u2", name: "Rahul Verma", email: "rahul@example.com", phone: "9123456789", avatar: "RV", created_at: "2024-02-05" },
+    { id: "u3", name: "Ananya Patel", email: "ananya@example.com", phone: "9988776655", avatar: "AP", created_at: "2024-03-12" },
+  ],
+  riders: [
+    { id: "r1", name: "Vikram Singh", phone: "9001122334", vehicle: "Bike", status: "online", rating: 4.8, earnings: 12450, orders_completed: 87, verified: true, avatar: "VS" },
+    { id: "r2", name: "Mohan Das", phone: "9005544332", vehicle: "Scooter", status: "offline", rating: 4.5, earnings: 8900, orders_completed: 61, verified: true, avatar: "MD" },
+    { id: "r3", name: "Suresh Kumar", phone: "9009988776", vehicle: "Bike", status: "online", rating: 4.9, earnings: 15200, orders_completed: 112, verified: false, avatar: "SK" },
+  ],
+  orders: [
+    { id: "ORD001", customer_id: "u1", customer_name: "Priya Sharma", rider_id: "r1", rider_name: "Vikram Singh", shop_name: "Domino's Pizza", category: "Food", item_details: "1x Farmhouse Pizza, 1x Garlic Bread", estimated_price: 520, final_price: 520, delivery_fee: 49, status: "Delivered", payment_status: "Paid", address: "14 MG Road, Ahmedabad", phone: "9876543210", bill_image: null, notes: "Extra napkins please", created_at: "2024-05-14T10:30:00", updated_at: "2024-05-14T11:45:00" },
+    { id: "ORD002", customer_id: "u2", customer_name: "Rahul Verma", rider_id: null, rider_name: null, shop_name: "Apollo Pharmacy", category: "Medicine", item_details: "Crocin strips x3, Vitamin C tablets", estimated_price: 180, final_price: null, delivery_fee: 39, status: "Pending", payment_status: "Pending", address: "7 Satellite, Ahmedabad", phone: "9123456789", bill_image: null, notes: "", created_at: "2024-05-15T09:15:00", updated_at: "2024-05-15T09:15:00" },
+    { id: "ORD003", customer_id: "u1", customer_name: "Priya Sharma", rider_id: "r1", rider_name: "Vikram Singh", shop_name: "D-Mart", category: "Grocery", item_details: "Milk 2L, Bread, Eggs dozen", estimated_price: 250, final_price: 265, delivery_fee: 29, status: "On the Way", payment_status: "Paid", address: "14 MG Road, Ahmedabad", phone: "9876543210", bill_image: null, notes: "Leave at door", created_at: "2024-05-15T08:00:00", updated_at: "2024-05-15T09:30:00" },
+    { id: "ORD004", customer_id: "u3", customer_name: "Ananya Patel", rider_id: "r3", rider_name: "Suresh Kumar", shop_name: "Haldiram's", category: "Food", item_details: "Pav Bhaji for 2, Lassi x2", estimated_price: 340, final_price: 355, delivery_fee: 49, status: "Accepted", payment_status: "Paid", address: "22 Navrangpura, Ahmedabad", phone: "9988776655", bill_image: null, notes: "", created_at: "2024-05-15T11:00:00", updated_at: "2024-05-15T11:10:00" },
+  ],
+  notifications: [
+    { id: "n1", user_id: "u1", message: "Your order ORD003 is on the way!", type: "order", read: false, created_at: "2024-05-15T09:30:00" },
+    { id: "n2", user_id: "u2", message: "Looking for a rider for your order ORD002", type: "info", read: false, created_at: "2024-05-15T09:16:00" },
+  ],
+};
+
+// ---- GLOBAL STATE ----
+let globalOrders = [...DB.orders];
+let globalRiders = [...DB.riders];
+let globalUsers = [...DB.users];
+let globalNotifs = [...DB.notifications];
+let listeners = [];
+
+function subscribe(fn) { listeners.push(fn); return () => { listeners = listeners.filter(l => l !== fn); }; }
+function notifyAll() { listeners.forEach(fn => fn()); }
+
+function getOrders() { return [...globalOrders]; }
+function getRiders() { return [...globalRiders]; }
+function getUsers() { return [...globalUsers]; }
+
+function updateOrder(id, updates) {
+  globalOrders = globalOrders.map(o => o.id === id ? { ...o, ...updates, updated_at: new Date().toISOString() } : o);
+  notifyAll();
+}
+
+function addOrder(order) {
+  globalOrders = [order, ...globalOrders];
+  notifyAll();
+}
+
+function updateRider(id, updates) {
+  globalRiders = globalRiders.map(r => r.id === id ? { ...r, ...updates } : r);
+  notifyAll();
+}
+
+function addRider(rider) {
+  globalRiders = [rider, ...globalRiders];
+  notifyAll();
+}
+
+// ---- UTILS ----
+const STATUS_COLORS = {
+  Pending: { bg: "#FFF3CD", text: "#856404", dot: "#FFC107" },
+  Accepted: { bg: "#CCE5FF", text: "#004085", dot: "#007BFF" },
+  Purchased: { bg: "#D4EDDA", text: "#155724", dot: "#28A745" },
+  "On the Way": { bg: "#D1ECF1", text: "#0C5460", dot: "#17A2B8" },
+  Delivered: { bg: "#D4EDDA", text: "#155724", dot: "#28A745" },
+  Cancelled: { bg: "#F8D7DA", text: "#721C24", dot: "#DC3545" },
+};
+
+const STATUS_STEPS = ["Pending", "Accepted", "Purchased", "On the Way", "Delivered"];
+
+function Badge({ status }) {
+  const c = STATUS_COLORS[status] || { bg: "#eee", text: "#333", dot: "#999" };
+  return (
+    <span style={{ background: c.bg, color: c.text, fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 20, display: "inline-flex", alignItems: "center", gap: 5 }}>
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: c.dot, display: "inline-block" }} />
+      {status}
+    </span>
+  );
+}
+
+function Avatar({ initials, size = 36, color = "#FF6B2B" }) {
+  return (
+    <div style={{ width: size, height: size, borderRadius: "50%", background: color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: size * 0.35, flexShrink: 0 }}>
+      {initials}
+    </div>
+  );
+}
+
+function Toast({ message, type, onClose }) {
+  useEffect(() => { const t = setTimeout(onClose, 3000); return () => clearTimeout(t); }, []);
+  const bg = type === "success" ? "#1a7a4a" : type === "error" ? "#b91c1c" : "#1e40af";
+  return (
+    <div style={{ position: "fixed", bottom: 24, right: 24, background: bg, color: "#fff", padding: "12px 20px", borderRadius: 10, fontSize: 14, fontWeight: 500, zIndex: 9999, boxShadow: "0 4px 20px rgba(0,0,0,0.2)", display: "flex", alignItems: "center", gap: 10, animation: "slideUp 0.3s ease" }}>
+      <span>{type === "success" ? "✓" : type === "error" ? "✗" : "ℹ"}</span>
+      {message}
+    </div>
+  );
+}
+
+function useRealtimeOrders() {
+  const [orders, setOrders] = useState(getOrders());
+  useEffect(() => {
+    const unsub = subscribe(() => setOrders(getOrders()));
+    return unsub;
+  }, []);
+  return orders;
+}
+
+function useRealtimeRiders() {
+  const [riders, setRiders] = useState(getRiders());
+  useEffect(() => {
+    const unsub = subscribe(() => setRiders(getRiders()));
+    return unsub;
+  }, []);
+  return riders;
+}
+
+function calcDeliveryFee(price) {
+  if (!price || price <= 0) return 0;
+  if (price <= 200) return 29;
+  if (price <= 500) return 39;
+  if (price <= 1000) return 49;
+  return 59;
+}
+
+function formatTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
+
+// ---- MAIN APP ----
+export default function BringoPlatform() {
+  const [app, setApp] = useState("customer"); // "customer" | "admin"
+  const [toast, setToast] = useState(null);
+  const [authUser, setAuthUser] = useState(null);
+  const [adminAuth, setAdminAuth] = useState(false);
+  const [page, setPage] = useState("home");
+  const [adminPage, setAdminPage] = useState("dashboard");
+
+  function showToast(message, type = "success") { setToast({ message, type }); }
+
+  return (
+    <div style={{ fontFamily: "'Segoe UI', system-ui, sans-serif", minHeight: "100vh", background: "#f5f5f5" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Plus Jakarta Sans', 'Segoe UI', sans-serif; }
+        input, textarea, select { font-family: inherit; }
+        button { cursor: pointer; font-family: inherit; }
+        @keyframes slideUp { from { transform: translateY(20px); opacity:0; } to { transform: translateY(0); opacity:1; } }
+        @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+        .order-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.1) !important; }
+        .btn-orange { background: #FF6B2B; color: #fff; border: none; padding: 12px 24px; border-radius: 10px; font-weight: 600; font-size: 15px; transition: all 0.2s; }
+        .btn-orange:hover { background: #e85d20; transform: translateY(-1px); }
+        .btn-outline { background: transparent; border: 2px solid #FF6B2B; color: #FF6B2B; padding: 10px 22px; border-radius: 10px; font-weight: 600; font-size: 15px; transition: all 0.2s; }
+        .btn-outline:hover { background: #FFF5F0; }
+        .nav-item { padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.15s; }
+        .nav-item:hover { background: rgba(255,107,43,0.1); color: #FF6B2B; }
+        .nav-item.active { background: #FF6B2B; color: #fff; }
+        input[type=text], input[type=tel], input[type=number], input[type=email], textarea, select { width: 100%; border: 1.5px solid #e5e7eb; border-radius: 10px; padding: 11px 14px; font-size: 14px; outline: none; transition: border 0.2s; background: #fff; }
+        input:focus, textarea:focus, select:focus { border-color: #FF6B2B; }
+        .card { background: #fff; border-radius: 16px; padding: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.07); }
+        .admin-nav { cursor: pointer; padding: 10px 14px; border-radius: 10px; display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 500; color: #4b5563; transition: all 0.15s; margin-bottom: 2px; }
+        .admin-nav:hover { background: #FFF5F0; color: #FF6B2B; }
+        .admin-nav.active { background: #FF6B2B; color: #fff; }
+        .stat-card { background: #fff; border-radius: 14px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
+        .table-row:hover { background: #f9fafb; }
+        .pill { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+      `}</style>
+
+      {/* App Switcher */}
+      <div style={{ position: "fixed", top: 12, right: 12, zIndex: 1000, display: "flex", gap: 6, background: "#fff", padding: 6, borderRadius: 12, boxShadow: "0 4px 20px rgba(0,0,0,0.12)" }}>
+        <button onClick={() => { setApp("customer"); setPage("home"); }} style={{ padding: "7px 16px", borderRadius: 8, border: "none", fontWeight: 600, fontSize: 13, background: app === "customer" ? "#FF6B2B" : "transparent", color: app === "customer" ? "#fff" : "#666", transition: "all 0.2s" }}>
+          🛵 Customer
+        </button>
+        <button onClick={() => { setApp("admin"); setAdminPage("dashboard"); }} style={{ padding: "7px 16px", borderRadius: 8, border: "none", fontWeight: 600, fontSize: 13, background: app === "admin" ? "#1e293b" : "transparent", color: app === "admin" ? "#fff" : "#666", transition: "all 0.2s" }}>
+          ⚙️ Admin
+        </button>
+      </div>
+
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+
+      {app === "customer" ? (
+        <CustomerApp authUser={authUser} setAuthUser={setAuthUser} page={page} setPage={setPage} showToast={showToast} />
+      ) : (
+        <AdminApp adminAuth={adminAuth} setAdminAuth={setAdminAuth} adminPage={adminPage} setAdminPage={setAdminPage} showToast={showToast} />
+      )}
+    </div>
+  );
+}
+
+// ==============================
+// CUSTOMER APP
+// ==============================
+function CustomerApp({ authUser, setAuthUser, page, setPage, showToast }) {
+  const orders = useRealtimeOrders();
+  const myOrders = orders.filter(o => o.customer_id === (authUser?.id || "u1"));
+
+  return (
+    <div>
+      <CustomerNav authUser={authUser} setAuthUser={setAuthUser} page={page} setPage={setPage} myOrders={myOrders} />
+      <div style={{ paddingTop: 64 }}>
+        {page === "home" && <HomePage setPage={setPage} />}
+        {page === "order" && <PlaceOrderPage authUser={authUser} setPage={setPage} showToast={showToast} />}
+        {page === "track" && <TrackOrderPage myOrders={myOrders} setPage={setPage} />}
+        {page === "my-orders" && <MyOrdersPage myOrders={myOrders} setPage={setPage} />}
+        {page === "profile" && <ProfilePage authUser={authUser} setAuthUser={setAuthUser} showToast={showToast} />}
+        {page === "login" && <LoginPage setAuthUser={setAuthUser} setPage={setPage} showToast={showToast} />}
+      </div>
+    </div>
+  );
+}
+
+function CustomerNav({ authUser, setAuthUser, page, setPage, myOrders }) {
+  const activeOrders = myOrders.filter(o => !["Delivered", "Cancelled"].includes(o.status));
+  return (
+    <nav style={{ position: "fixed", top: 0, left: 0, right: 0, height: 64, background: "#fff", boxShadow: "0 2px 12px rgba(0,0,0,0.08)", display: "flex", alignItems: "center", padding: "0 24px", gap: 24, zIndex: 100 }}>
+      <div onClick={() => setPage("home")} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ width: 32, height: 32, background: "#FF6B2B", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🛵</div>
+        <span style={{ fontWeight: 800, fontSize: 20, color: "#FF6B2B", letterSpacing: -0.5 }}>bringo</span>
+      </div>
+      <div style={{ flex: 1 }} />
+      <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+        {["home", "order", "my-orders", "track"].map(p => (
+          <div key={p} className={`nav-item ${page === p ? "active" : ""}`} onClick={() => setPage(p)}>
+            {p === "home" ? "Home" : p === "order" ? "Place Order" : p === "my-orders" ? `Orders${activeOrders.length > 0 ? ` (${activeOrders.length})` : ""}` : "Track"}
+          </div>
+        ))}
+        {authUser ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Avatar initials={authUser.avatar} size={32} />
+            <div className="nav-item" onClick={() => setPage("profile")} style={{ padding: "6px 10px" }}>{authUser.name.split(" ")[0]}</div>
+            <button className="btn-outline" style={{ padding: "6px 14px", fontSize: 13 }} onClick={() => { setAuthUser(null); showToast("Logged out", "info"); }}>Logout</button>
+          </div>
+        ) : (
+          <button className="btn-orange" style={{ padding: "8px 18px", fontSize: 14 }} onClick={() => setPage("login")}>Login</button>
+        )}
+      </div>
+    </nav>
+  );
+}
+
+// ---- HOME PAGE ----
+function HomePage({ setPage }) {
+  const features = [
+    { icon: "🍕", title: "Food & Restaurants", desc: "Any restaurant, any dish, delivered to you." },
+    { icon: "🛒", title: "Grocery Stores", desc: "Fresh produce and daily essentials, fast." },
+    { icon: "💊", title: "Medical Stores", desc: "Medicines and health products at store price." },
+    { icon: "☕", title: "Cafes & Bakeries", desc: "Your favorite coffee or snacks, brought home." },
+    { icon: "📦", title: "Parcels & Others", desc: "Send or receive anything nearby, hassle-free." },
+    { icon: "🏪", title: "Any Local Shop", desc: "Stationery, hardware, gifts — you name it." },
+  ];
+  const testimonials = [
+    { name: "Priya S.", avatar: "PS", text: "Bringo saved my day! Got medicine from Apollo at exact store price. No markups, fast delivery!", rating: 5 },
+    { name: "Rahul V.", avatar: "RV", text: "Finally an app that doesn't charge extra just because it's on an app. Delivery fee is super reasonable.", rating: 5 },
+    { name: "Ananya P.", avatar: "AP", text: "I use it for grocery runs when I'm too busy. The rider sends photos of the bill. So transparent!", rating: 5 },
+  ];
+
+  return (
+    <div>
+      {/* Hero */}
+      <div style={{ background: "linear-gradient(135deg, #FF6B2B 0%, #FF8C55 50%, #FFB347 100%)", color: "#fff", padding: "80px 24px 100px", textAlign: "center", position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", top: -60, right: -60, width: 300, height: 300, background: "rgba(255,255,255,0.05)", borderRadius: "50%" }} />
+        <div style={{ position: "absolute", bottom: -80, left: -40, width: 250, height: 250, background: "rgba(0,0,0,0.05)", borderRadius: "50%" }} />
+        <div style={{ position: "relative", maxWidth: 700, margin: "0 auto" }}>
+          <div style={{ display: "inline-block", background: "rgba(255,255,255,0.2)", borderRadius: 20, padding: "5px 16px", fontSize: 13, fontWeight: 600, marginBottom: 20 }}>
+            🎉 Launching in Ahmedabad • More cities soon
+          </div>
+          <h1 style={{ fontSize: 52, fontWeight: 800, lineHeight: 1.15, marginBottom: 16, letterSpacing: -1 }}>
+            Bring Anything<br /><span style={{ color: "#FFE5A0" }}>Nearby</span>
+          </h1>
+          <p style={{ fontSize: 18, opacity: 0.9, marginBottom: 36, lineHeight: 1.6, maxWidth: 520, margin: "0 auto 36px" }}>
+            Order from any local shop — restaurants, pharmacies, groceries, cafes — at the original store price. We just add a small delivery fee.
+          </p>
+          <div style={{ display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap" }}>
+            <button className="btn-orange" style={{ background: "#fff", color: "#FF6B2B", fontSize: 16, padding: "14px 32px" }} onClick={() => setPage("order")}>
+              Place an Order →
+            </button>
+            <button style={{ background: "transparent", border: "2px solid rgba(255,255,255,0.6)", color: "#fff", padding: "14px 28px", borderRadius: 10, fontWeight: 600, fontSize: 15, cursor: "pointer" }}>
+              See How It Works
+            </button>
+          </div>
+          <div style={{ display: "flex", gap: 32, justifyContent: "center", marginTop: 48, flexWrap: "wrap" }}>
+            {[["500+", "Happy Customers"], ["200+", "Local Shops"], ["₹29", "Starts at"]].map(([num, label]) => (
+              <div key={label} style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 28, fontWeight: 800 }}>{num}</div>
+                <div style={{ fontSize: 13, opacity: 0.85 }}>{label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* How it Works */}
+      <div style={{ maxWidth: 1000, margin: "0 auto", padding: "72px 24px 48px" }}>
+        <div style={{ textAlign: "center", marginBottom: 48 }}>
+          <span style={{ color: "#FF6B2B", fontWeight: 700, fontSize: 14, textTransform: "uppercase", letterSpacing: 1 }}>Simple & Fast</span>
+          <h2 style={{ fontSize: 36, fontWeight: 800, marginTop: 8, color: "#111" }}>How Bringo Works</h2>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 24 }}>
+          {[
+            { step: "01", icon: "📝", title: "Place Your Order", desc: "Tell us what you want and from which shop. Add item details and delivery address." },
+            { step: "02", icon: "🛵", title: "Rider Picks Up", desc: "A nearby delivery partner buys the item at the original store price." },
+            { step: "03", icon: "📸", title: "Bill Shared", desc: "Rider uploads the original bill so you pay exactly what was charged." },
+            { step: "04", icon: "🏠", title: "Delivered!", desc: "Your order arrives with the original bill. Pay only price + small delivery fee." },
+          ].map(({ step, icon, title, desc }) => (
+            <div key={step} className="card" style={{ textAlign: "center", border: "1px solid #f0f0f0" }}>
+              <div style={{ fontSize: 32, marginBottom: 10 }}>{icon}</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#FF6B2B", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>Step {step}</div>
+              <h3 style={{ fontWeight: 700, fontSize: 16, color: "#111", marginBottom: 8 }}>{title}</h3>
+              <p style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.6 }}>{desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Why Bringo */}
+      <div style={{ background: "#FFF8F5", padding: "60px 24px" }}>
+        <div style={{ maxWidth: 900, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 48, alignItems: "center" }}>
+          <div>
+            <span style={{ color: "#FF6B2B", fontWeight: 700, fontSize: 14, textTransform: "uppercase", letterSpacing: 1 }}>Why choose us</span>
+            <h2 style={{ fontSize: 34, fontWeight: 800, marginTop: 8, color: "#111", marginBottom: 20, lineHeight: 1.2 }}>No Hidden Markups.<br />Just a Fair Delivery Fee.</h2>
+            <p style={{ color: "#6b7280", fontSize: 15, lineHeight: 1.7, marginBottom: 24 }}>
+              Unlike food delivery apps that inflate menu prices by 20-40%, Bringo charges only a transparent delivery fee. You pay exactly what the shop charges.
+            </p>
+            {[
+              ["✅", "Original store prices always"],
+              ["✅", "Bill photo shared by rider"],
+              ["✅", "No restaurant commission markup"],
+              ["✅", "Any shop, not just listed ones"],
+              ["✅", "Flat, affordable delivery fees"],
+            ].map(([icon, text]) => (
+              <div key={text} style={{ display: "flex", gap: 10, marginBottom: 10, fontSize: 15, color: "#374151" }}>
+                <span>{icon}</span><span>{text}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            {[
+              { label: "Swiggy/Zomato", price: "₹750", note: "with 30% markup" },
+              { label: "Bringo", price: "₹520", note: "original + ₹49 fee", highlight: true },
+            ].map(({ label, price, note, highlight }) => (
+              <div key={label} className="card" style={{ border: highlight ? "2px solid #FF6B2B" : "1px solid #f0f0f0", background: highlight ? "#FFF5F0" : "#fff", textAlign: "center" }}>
+                {highlight && <div style={{ fontSize: 11, fontWeight: 700, color: "#FF6B2B", marginBottom: 8, textTransform: "uppercase" }}>✨ Bringo Way</div>}
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#111", marginBottom: 4 }}>{label}</div>
+                <div style={{ fontSize: 28, fontWeight: 800, color: highlight ? "#FF6B2B" : "#374151" }}>{price}</div>
+                <div style={{ fontSize: 12, color: "#9ca3af" }}>{note}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Features */}
+      <div style={{ maxWidth: 1000, margin: "0 auto", padding: "72px 24px" }}>
+        <div style={{ textAlign: "center", marginBottom: 48 }}>
+          <h2 style={{ fontSize: 34, fontWeight: 800, color: "#111" }}>Order from Any Shop</h2>
+          <p style={{ color: "#6b7280", marginTop: 10, fontSize: 15 }}>If there's a shop nearby, we'll get it for you.</p>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 16 }}>
+          {features.map(({ icon, title, desc }) => (
+            <div key={title} className="card order-card" style={{ textAlign: "center", cursor: "pointer", transition: "all 0.2s", border: "1px solid #f0f0f0" }}>
+              <div style={{ fontSize: 36, marginBottom: 12 }}>{icon}</div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: "#111", marginBottom: 6 }}>{title}</div>
+              <div style={{ fontSize: 12, color: "#9ca3af", lineHeight: 1.5 }}>{desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Testimonials */}
+      <div style={{ background: "#111", padding: "72px 24px", color: "#fff" }}>
+        <div style={{ maxWidth: 1000, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 48 }}>
+            <h2 style={{ fontSize: 34, fontWeight: 800 }}>Loved by Customers</h2>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 20 }}>
+            {testimonials.map(({ name, avatar, text, rating }) => (
+              <div key={name} style={{ background: "#1e1e1e", borderRadius: 16, padding: 24, border: "1px solid #333" }}>
+                <div style={{ color: "#FFB347", fontSize: 16, marginBottom: 12 }}>{"★".repeat(rating)}</div>
+                <p style={{ fontSize: 14, lineHeight: 1.7, color: "#d1d5db", marginBottom: 16 }}>&ldquo;{text}&rdquo;</p>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <Avatar initials={avatar} size={36} color="#FF6B2B" />
+                  <span style={{ fontWeight: 600, fontSize: 14 }}>{name}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* CTA */}
+      <div style={{ textAlign: "center", padding: "72px 24px", background: "#FFF8F5" }}>
+        <h2 style={{ fontSize: 36, fontWeight: 800, color: "#111", marginBottom: 16 }}>Ready to Order?</h2>
+        <p style={{ color: "#6b7280", fontSize: 16, marginBottom: 32 }}>Join thousands of happy customers getting deliveries at store prices.</p>
+        <button className="btn-orange" style={{ fontSize: 17, padding: "15px 40px" }} onClick={() => setPage("order")}>
+          Place Your First Order →
+        </button>
+      </div>
+
+      {/* Footer */}
+      <footer style={{ background: "#111", color: "#9ca3af", padding: "40px 24px", textAlign: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 16 }}>
+          <div style={{ width: 28, height: 28, background: "#FF6B2B", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>🛵</div>
+          <span style={{ fontWeight: 800, fontSize: 18, color: "#fff" }}>bringo</span>
+        </div>
+        <p style={{ fontSize: 13 }}>Bring Anything Nearby • Ahmedabad, Gujarat</p>
+        <p style={{ fontSize: 12, marginTop: 8 }}>© 2024 Bringo Technologies. All rights reserved.</p>
+      </footer>
+    </div>
+  );
+}
+
+// ---- PLACE ORDER PAGE ----
+function PlaceOrderPage({ authUser, setPage, showToast }) {
+  const [form, setForm] = useState({ shop: "", category: "Food", items: "", price: "", address: authUser ? "14 MG Road, Ahmedabad" : "", phone: authUser?.phone || "", notes: "" });
+  const [loading, setLoading] = useState(false);
+
+  const fee = calcDeliveryFee(Number(form.price));
+  const total = (Number(form.price) || 0) + fee;
+
+  function handleSubmit() {
+    if (!form.shop || !form.items || !form.price || !form.address || !form.phone) {
+      showToast("Please fill all required fields", "error"); return;
+    }
+    setLoading(true);
+    setTimeout(() => {
+      const newOrder = {
+        id: `ORD${String(globalOrders.length + 1).padStart(3, "0")}`,
+        customer_id: authUser?.id || "u1",
+        customer_name: authUser?.name || "Guest User",
+        rider_id: null, rider_name: null,
+        shop_name: form.shop,
+        category: form.category,
+        item_details: form.items,
+        estimated_price: Number(form.price),
+        final_price: null,
+        delivery_fee: fee,
+        status: "Pending",
+        payment_status: "Pending",
+        address: form.address,
+        phone: form.phone,
+        bill_image: null,
+        notes: form.notes,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      addOrder(newOrder);
+      setLoading(false);
+      showToast(`Order placed! ID: ${newOrder.id}`, "success");
+      setPage("my-orders");
+    }, 1200);
+  }
+
+  return (
+    <div style={{ maxWidth: 700, margin: "0 auto", padding: "40px 24px" }}>
+      <div style={{ marginBottom: 28 }}>
+        <h1 style={{ fontSize: 28, fontWeight: 800, color: "#111" }}>Place an Order</h1>
+        <p style={{ color: "#6b7280", marginTop: 6 }}>Tell us what you need and we'll get it delivered.</p>
+      </div>
+      <div className="card" style={{ marginBottom: 20 }}>
+        <h3 style={{ fontWeight: 700, fontSize: 15, color: "#111", marginBottom: 16 }}>Shop & Item Details</h3>
+        <div style={{ display: "grid", gap: 14 }}>
+          <div>
+            <label style={{ fontSize: 13, fontWeight: 600, color: "#374151", display: "block", marginBottom: 6 }}>Restaurant / Shop Name *</label>
+            <input type="text" placeholder="e.g. Domino's Pizza, D-Mart, Apollo Pharmacy" value={form.shop} onChange={e => setForm(f => ({ ...f, shop: e.target.value }))} />
+          </div>
+          <div>
+            <label style={{ fontSize: 13, fontWeight: 600, color: "#374151", display: "block", marginBottom: 6 }}>Category *</label>
+            <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
+              {["Food", "Grocery", "Medicine", "Parcel", "Cafe", "Stationery", "Other"].map(c => <option key={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: 13, fontWeight: 600, color: "#374151", display: "block", marginBottom: 6 }}>Item Details *</label>
+            <textarea rows={3} placeholder="Describe what you want (e.g. 2x Pepperoni Pizza, 1x Coke 500ml)" value={form.items} onChange={e => setForm(f => ({ ...f, items: e.target.value }))} style={{ resize: "vertical" }} />
+          </div>
+          <div>
+            <label style={{ fontSize: 13, fontWeight: 600, color: "#374151", display: "block", marginBottom: 6 }}>Estimated Product Price (₹) *</label>
+            <input type="number" placeholder="0" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} />
+          </div>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 20 }}>
+        <h3 style={{ fontWeight: 700, fontSize: 15, color: "#111", marginBottom: 16 }}>Delivery Details</h3>
+        <div style={{ display: "grid", gap: 14 }}>
+          <div>
+            <label style={{ fontSize: 13, fontWeight: 600, color: "#374151", display: "block", marginBottom: 6 }}>Delivery Address *</label>
+            <textarea rows={2} placeholder="Full delivery address with landmarks" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} style={{ resize: "none" }} />
+          </div>
+          <div>
+            <label style={{ fontSize: 13, fontWeight: 600, color: "#374151", display: "block", marginBottom: 6 }}>Phone Number *</label>
+            <input type="tel" placeholder="10-digit mobile number" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+          </div>
+          <div>
+            <label style={{ fontSize: 13, fontWeight: 600, color: "#374151", display: "block", marginBottom: 6 }}>Notes for Rider (optional)</label>
+            <input type="text" placeholder="Any special instructions?" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+          </div>
+        </div>
+      </div>
+
+      {/* Price Summary */}
+      {form.price > 0 && (
+        <div className="card" style={{ background: "#FFF8F5", border: "1.5px solid #FFD4B8", marginBottom: 20 }}>
+          <h3 style={{ fontWeight: 700, fontSize: 15, color: "#111", marginBottom: 14 }}>Price Estimate</h3>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14, color: "#374151" }}>
+            <span>Item Price (estimated)</span><span>₹{form.price}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, fontSize: 14, color: "#374151" }}>
+            <span>Delivery Fee</span><span>₹{fee}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 16, color: "#FF6B2B", borderTop: "1px dashed #FFD4B8", paddingTop: 12 }}>
+            <span>Estimated Total</span><span>₹{total}</span>
+          </div>
+          <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 8 }}>* Final amount depends on actual bill from the store.</p>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 12 }}>
+        <button className="btn-orange" style={{ flex: 1, fontSize: 16, padding: "14px" }} onClick={handleSubmit} disabled={loading}>
+          {loading ? "Placing Order..." : "Place Order"}
+        </button>
+        <button className="btn-outline" style={{ padding: "14px 20px" }} onClick={() => showToast("Payment gateway coming soon!", "info")}>
+          Pay Advance
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---- TRACK ORDER PAGE ----
+function TrackOrderPage({ myOrders, setPage }) {
+  const [selected, setSelected] = useState(null);
+  const activeOrders = myOrders.filter(o => !["Delivered", "Cancelled"].includes(o.status));
+  const order = selected ? myOrders.find(o => o.id === selected) : (activeOrders[0] || myOrders[0]);
+
+  if (myOrders.length === 0) {
+    return (
+      <div style={{ textAlign: "center", padding: "80px 24px" }}>
+        <div style={{ fontSize: 64, marginBottom: 16 }}>📦</div>
+        <h2 style={{ fontWeight: 700, color: "#111", marginBottom: 8 }}>No Orders Yet</h2>
+        <p style={{ color: "#6b7280", marginBottom: 24 }}>Place your first order to track it here.</p>
+        <button className="btn-orange" onClick={() => setPage("order")}>Place Order</button>
+      </div>
+    );
+  }
+
+  const stepIndex = order ? STATUS_STEPS.indexOf(order.status) : -1;
+
+  return (
+    <div style={{ maxWidth: 700, margin: "0 auto", padding: "40px 24px" }}>
+      <h1 style={{ fontSize: 28, fontWeight: 800, color: "#111", marginBottom: 24 }}>Track Order</h1>
+
+      {/* Order selector */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
+        {myOrders.slice(0, 5).map(o => (
+          <button key={o.id} onClick={() => setSelected(o.id)} style={{ padding: "8px 16px", borderRadius: 20, border: "2px solid", borderColor: selected === o.id || (!selected && o.id === (activeOrders[0] || myOrders[0])?.id) ? "#FF6B2B" : "#e5e7eb", background: selected === o.id || (!selected && o.id === (activeOrders[0] || myOrders[0])?.id) ? "#FFF5F0" : "#fff", fontWeight: 600, fontSize: 13, color: "#374151", cursor: "pointer" }}>
+            {o.id}
+          </button>
+        ))}
+      </div>
+
+      {order && (
+        <div>
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 17, color: "#111" }}>{order.shop_name}</div>
+                <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>{order.item_details}</div>
+              </div>
+              <Badge status={order.status} />
+            </div>
+
+            {/* Progress bar */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                {STATUS_STEPS.map((step, i) => (
+                  <div key={step} style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
+                    <div style={{ width: 28, height: 28, borderRadius: "50%", background: i <= stepIndex ? "#FF6B2B" : "#e5e7eb", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: i <= stepIndex ? "#fff" : "#9ca3af", fontWeight: 700, position: "relative", zIndex: 1, marginBottom: 6, transition: "all 0.3s" }}>
+                      {i < stepIndex ? "✓" : i + 1}
+                    </div>
+                    <div style={{ fontSize: 10, color: i <= stepIndex ? "#FF6B2B" : "#9ca3af", fontWeight: i <= stepIndex ? 600 : 400, textAlign: "center", lineHeight: 1.3 }}>{step}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ height: 4, background: "#e5e7eb", borderRadius: 2, position: "relative", marginTop: -44 }}>
+                <div style={{ height: "100%", background: "#FF6B2B", borderRadius: 2, width: `${Math.max(0, stepIndex) / (STATUS_STEPS.length - 1) * 100}%`, transition: "width 0.5s ease" }} />
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: 13 }}>
+              <div><span style={{ color: "#9ca3af" }}>Order ID:</span> <span style={{ fontWeight: 600 }}>{order.id}</span></div>
+              <div><span style={{ color: "#9ca3af" }}>Category:</span> <span style={{ fontWeight: 600 }}>{order.category}</span></div>
+              <div><span style={{ color: "#9ca3af" }}>Est. Price:</span> <span style={{ fontWeight: 600 }}>₹{order.estimated_price}</span></div>
+              <div><span style={{ color: "#9ca3af" }}>Delivery Fee:</span> <span style={{ fontWeight: 600 }}>₹{order.delivery_fee}</span></div>
+              {order.final_price && <div><span style={{ color: "#9ca3af" }}>Final Price:</span> <span style={{ fontWeight: 700, color: "#FF6B2B" }}>₹{order.final_price + order.delivery_fee}</span></div>}
+              <div><span style={{ color: "#9ca3af" }}>Ordered:</span> <span style={{ fontWeight: 600 }}>{formatTime(order.created_at)}</span></div>
+            </div>
+          </div>
+
+          {order.rider_name && (
+            <div className="card" style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <Avatar initials={order.rider_id === "r1" ? "VS" : "SK"} size={48} color="#1e293b" />
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15, color: "#111" }}>{order.rider_name}</div>
+                <div style={{ fontSize: 13, color: "#6b7280" }}>Your delivery partner</div>
+                <div style={{ fontSize: 13, color: "#FF6B2B", marginTop: 2 }}>⭐ 4.8 • Online</div>
+              </div>
+              <div style={{ marginLeft: "auto" }}>
+                <div style={{ background: "#f0fdf4", color: "#15803d", padding: "8px 16px", borderRadius: 20, fontSize: 13, fontWeight: 600 }}>📞 Call</div>
+              </div>
+            </div>
+          )}
+
+          {order.status === "Cancelled" && (
+            <div className="card" style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", textAlign: "center" }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>❌</div>
+              <div style={{ fontWeight: 700, color: "#991B1B" }}>Order Cancelled</div>
+              <div style={{ fontSize: 13, color: "#9ca3af", marginTop: 4 }}>Any payment will be refunded in 2-3 days.</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- MY ORDERS PAGE ----
+function MyOrdersPage({ myOrders, setPage }) {
+  const [tab, setTab] = useState("active");
+  const active = myOrders.filter(o => !["Delivered", "Cancelled"].includes(o.status));
+  const past = myOrders.filter(o => ["Delivered", "Cancelled"].includes(o.status));
+  const displayed = tab === "active" ? active : past;
+
+  return (
+    <div style={{ maxWidth: 800, margin: "0 auto", padding: "40px 24px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <h1 style={{ fontSize: 28, fontWeight: 800, color: "#111" }}>My Orders</h1>
+        <button className="btn-orange" onClick={() => setPage("order")}>+ New Order</button>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+        {[["active", `Active (${active.length})`], ["past", `Past (${past.length})`]].map(([key, label]) => (
+          <button key={key} onClick={() => setTab(key)} style={{ padding: "9px 20px", borderRadius: 20, border: "2px solid", borderColor: tab === key ? "#FF6B2B" : "#e5e7eb", background: tab === key ? "#FF6B2B" : "#fff", color: tab === key ? "#fff" : "#374151", fontWeight: 600, fontSize: 14, cursor: "pointer" }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {displayed.length === 0 ? (
+        <div className="card" style={{ textAlign: "center", padding: 48 }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>📋</div>
+          <div style={{ fontWeight: 600, color: "#374151" }}>No {tab === "active" ? "active" : "past"} orders</div>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 14 }}>
+          {displayed.map(order => (
+            <div key={order.id} className="card order-card" style={{ transition: "all 0.2s", cursor: "pointer", border: "1px solid #f0f0f0" }} onClick={() => setPage("track")}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 16, color: "#111" }}>{order.shop_name}</div>
+                  <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>{order.item_details.slice(0, 60)}{order.item_details.length > 60 ? "..." : ""}</div>
+                </div>
+                <Badge status={order.status} />
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#6b7280", borderTop: "1px solid #f5f5f5", paddingTop: 10 }}>
+                <span>{order.id} • {formatDate(order.created_at)}</span>
+                <span style={{ fontWeight: 700, color: "#111" }}>₹{(order.final_price || order.estimated_price) + order.delivery_fee}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- PROFILE PAGE ----
+function ProfilePage({ authUser, setAuthUser, showToast }) {
+  const user = authUser || DB.users[0];
+  return (
+    <div style={{ maxWidth: 600, margin: "0 auto", padding: "40px 24px" }}>
+      <h1 style={{ fontSize: 28, fontWeight: 800, color: "#111", marginBottom: 24 }}>My Profile</h1>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>
+          <Avatar initials={user.avatar} size={60} />
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 18, color: "#111" }}>{user.name}</div>
+            <div style={{ fontSize: 14, color: "#6b7280" }}>{user.email}</div>
+            <div style={{ fontSize: 13, color: "#FF6B2B", marginTop: 2 }}>📞 +91 {user.phone}</div>
+          </div>
+        </div>
+        <div style={{ display: "grid", gap: 12 }}>
+          {[["Full Name", user.name], ["Email", user.email], ["Phone", "+91 " + user.phone], ["Member Since", formatDate(user.created_at)]].map(([label, val]) => (
+            <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #f5f5f5", fontSize: 14 }}>
+              <span style={{ color: "#9ca3af" }}>{label}</span>
+              <span style={{ fontWeight: 600, color: "#111" }}>{val}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="card">
+        <h3 style={{ fontWeight: 700, marginBottom: 14, color: "#111" }}>Saved Addresses</h3>
+        {["14 MG Road, Ahmedabad", "7 Satellite, Ahmedabad"].map(addr => (
+          <div key={addr} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid #f5f5f5", fontSize: 14 }}>
+            <span>📍</span><span style={{ color: "#374151" }}>{addr}</span>
+          </div>
+        ))}
+        <button className="btn-outline" style={{ marginTop: 14, padding: "8px 16px", fontSize: 13 }} onClick={() => showToast("Address saved!", "success")}>+ Add Address</button>
+      </div>
+    </div>
+  );
+}
+
+// ---- LOGIN PAGE ----
+function LoginPage({ setAuthUser, setPage, showToast }) {
+  const [mode, setMode] = useState("google");
+  const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+
+  function handleGoogle(user) {
+    setAuthUser(user);
+    showToast(`Welcome back, ${user.name.split(" ")[0]}!`, "success");
+    setPage("home");
+  }
+
+  function handleOtp() {
+    if (!otpSent) { setOtpSent(true); showToast("OTP sent to " + phone, "info"); return; }
+    if (otp === "1234") { handleGoogle(DB.users[0]); } else { showToast("Invalid OTP. Try 1234 for demo.", "error"); }
+  }
+
+  return (
+    <div style={{ maxWidth: 420, margin: "60px auto", padding: "0 24px" }}>
+      <div className="card" style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>🛵</div>
+        <h2 style={{ fontSize: 24, fontWeight: 800, color: "#111", marginBottom: 4 }}>Welcome to Bringo</h2>
+        <p style={{ fontSize: 14, color: "#6b7280", marginBottom: 24 }}>Sign in to place and track orders</p>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+          {["google", "otp"].map(m => (
+            <button key={m} onClick={() => setMode(m)} style={{ flex: 1, padding: "10px", borderRadius: 10, border: "2px solid", borderColor: mode === m ? "#FF6B2B" : "#e5e7eb", background: mode === m ? "#FFF5F0" : "#fff", fontWeight: 600, fontSize: 14, color: mode === m ? "#FF6B2B" : "#374151", cursor: "pointer" }}>
+              {m === "google" ? "Google" : "OTP"}
+            </button>
+          ))}
+        </div>
+
+        {mode === "google" ? (
+          <div style={{ display: "grid", gap: 12 }}>
+            {DB.users.map(user => (
+              <button key={user.id} onClick={() => handleGoogle(user)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", border: "1.5px solid #e5e7eb", borderRadius: 12, background: "#fff", cursor: "pointer", textAlign: "left", transition: "all 0.2s" }}>
+                <Avatar initials={user.avatar} size={36} />
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 14, color: "#111" }}>{user.name}</div>
+                  <div style={{ fontSize: 12, color: "#9ca3af" }}>{user.email}</div>
+                </div>
+                <span style={{ marginLeft: "auto", fontSize: 12, color: "#FF6B2B" }}>Demo →</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 12 }}>
+            <input type="tel" placeholder="Enter phone number" value={phone} onChange={e => setPhone(e.target.value)} />
+            {otpSent && <input type="text" placeholder="Enter OTP (demo: 1234)" value={otp} onChange={e => setOtp(e.target.value)} />}
+            <button className="btn-orange" onClick={handleOtp}>{otpSent ? "Verify OTP" : "Send OTP"}</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ==============================
+// ADMIN APP
+// ==============================
+function AdminApp({ adminAuth, setAdminAuth, adminPage, setAdminPage, showToast }) {
+  if (!adminAuth) return <AdminLogin setAdminAuth={setAdminAuth} showToast={showToast} />;
+  return (
+    <div style={{ display: "flex", minHeight: "100vh", paddingTop: 0, background: "#f8fafc" }}>
+      <AdminSidebar adminPage={adminPage} setAdminPage={setAdminPage} setAdminAuth={setAdminAuth} />
+      <div style={{ flex: 1, marginLeft: 220, padding: "28px 28px 28px", minHeight: "100vh", background: "#f8fafc" }}>
+        {adminPage === "dashboard" && <AdminDashboard setAdminPage={setAdminPage} showToast={showToast} />}
+        {adminPage === "orders" && <AdminOrders showToast={showToast} />}
+        {adminPage === "riders" && <AdminRiders showToast={showToast} />}
+        {adminPage === "customers" && <AdminCustomers showToast={showToast} />}
+        {adminPage === "payments" && <AdminPayments />}
+        {adminPage === "notifications" && <AdminNotifications showToast={showToast} />}
+      </div>
+    </div>
+  );
+}
+
+function AdminLogin({ setAdminAuth, showToast }) {
+  const [creds, setCreds] = useState({ email: "", password: "" });
+  function handleLogin() {
+    if (creds.email === "admin@bringo.in" && creds.password === "admin123") {
+      setAdminAuth(true); showToast("Welcome, Admin!", "success");
+    } else showToast("Use admin@bringo.in / admin123", "error");
+  }
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc" }}>
+      <div className="card" style={{ width: 380, textAlign: "center" }}>
+        <div style={{ width: 48, height: 48, background: "#1e293b", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, margin: "0 auto 16px" }}>⚙️</div>
+        <h2 style={{ fontSize: 22, fontWeight: 800, color: "#111", marginBottom: 4 }}>Bringo Admin</h2>
+        <p style={{ fontSize: 13, color: "#9ca3af", marginBottom: 24 }}>admin@bringo.in / admin123</p>
+        <div style={{ display: "grid", gap: 12 }}>
+          <input type="email" placeholder="Admin email" value={creds.email} onChange={e => setCreds(c => ({ ...c, email: e.target.value }))} />
+          <input type="password" placeholder="Password" value={creds.password} onChange={e => setCreds(c => ({ ...c, password: e.target.value }))} onKeyDown={e => e.key === "Enter" && handleLogin()} />
+          <button className="btn-orange" style={{ background: "#1e293b" }} onClick={handleLogin}>Login to Dashboard</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminSidebar({ adminPage, setAdminPage, setAdminAuth }) {
+  const nav = [
+    { id: "dashboard", icon: "📊", label: "Dashboard" },
+    { id: "orders", icon: "📦", label: "Orders" },
+    { id: "riders", icon: "🛵", label: "Riders" },
+    { id: "customers", icon: "👥", label: "Customers" },
+    { id: "payments", icon: "💰", label: "Payments" },
+    { id: "notifications", icon: "🔔", label: "Notifications" },
+  ];
+  return (
+    <div style={{ width: 220, background: "#1e293b", position: "fixed", left: 0, top: 0, bottom: 0, display: "flex", flexDirection: "column", padding: "20px 12px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 28, padding: "0 4px" }}>
+        <div style={{ width: 32, height: 32, background: "#FF6B2B", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>🛵</div>
+        <div>
+          <div style={{ fontWeight: 800, fontSize: 16, color: "#fff" }}>bringo</div>
+          <div style={{ fontSize: 10, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>Admin Panel</div>
+        </div>
+      </div>
+      {nav.map(({ id, icon, label }) => (
+        <div key={id} className={`admin-nav ${adminPage === id ? "active" : ""}`} onClick={() => setAdminPage(id)}>
+          <span style={{ fontSize: 16 }}>{icon}</span>{label}
+        </div>
+      ))}
+      <div style={{ flex: 1 }} />
+      <div className="admin-nav" onClick={() => setAdminAuth(false)} style={{ color: "#ef4444" }}>
+        <span>🚪</span>Logout
+      </div>
+    </div>
+  );
+}
+
+// ---- ADMIN DASHBOARD ----
+function AdminDashboard({ setAdminPage, showToast }) {
+  const orders = useRealtimeOrders();
+  const riders = useRealtimeRiders();
+  const total = orders.length;
+  const active = orders.filter(o => !["Delivered", "Cancelled"].includes(o.status)).length;
+  const delivered = orders.filter(o => o.status === "Delivered").length;
+  const revenue = orders.filter(o => o.payment_status === "Paid").reduce((s, o) => s + (o.final_price || o.estimated_price) + o.delivery_fee, 0);
+  const feeEarned = orders.filter(o => o.payment_status === "Paid").reduce((s, o) => s + o.delivery_fee, 0);
+  const onlineRiders = riders.filter(r => r.status === "online").length;
+
+  const stats = [
+    { label: "Total Orders", value: total, icon: "📦", color: "#FF6B2B" },
+    { label: "Active Orders", value: active, icon: "⚡", color: "#3B82F6", pulse: active > 0 },
+    { label: "Delivered", value: delivered, icon: "✅", color: "#10B981" },
+    { label: "Revenue", value: `₹${revenue.toLocaleString()}`, icon: "💰", color: "#8B5CF6" },
+    { label: "Delivery Fees", value: `₹${feeEarned}`, icon: "🛵", color: "#F59E0B" },
+    { label: "Online Riders", value: onlineRiders, icon: "🟢", color: "#10B981" },
+  ];
+
+  const catData = ["Food", "Grocery", "Medicine", "Other"].map(cat => ({
+    cat, count: orders.filter(o => o.category === cat || (cat === "Other" && !["Food", "Grocery", "Medicine"].includes(o.category))).length
+  }));
+  const maxCat = Math.max(...catData.map(d => d.count), 1);
+
+  return (
+    <div>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 26, fontWeight: 800, color: "#111" }}>Dashboard</h1>
+        <p style={{ color: "#9ca3af", fontSize: 14, marginTop: 2 }}>Real-time overview of Bringo operations</p>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 24 }}>
+        {stats.map(({ label, value, icon, color, pulse }) => (
+          <div key={label} className="stat-card">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <div style={{ fontSize: 12, color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>{label}</div>
+                <div style={{ fontSize: 28, fontWeight: 800, color: "#111" }}>{value}</div>
+              </div>
+              <div style={{ fontSize: 22, animation: pulse ? "pulse 2s infinite" : "none" }}>{icon}</div>
+            </div>
+            <div style={{ height: 3, background: "#f5f5f5", borderRadius: 2, marginTop: 14 }}>
+              <div style={{ height: "100%", background: color, borderRadius: 2, width: "60%" }} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 }}>
+        {/* Orders by Category */}
+        <div className="card">
+          <h3 style={{ fontWeight: 700, fontSize: 15, color: "#111", marginBottom: 16 }}>Orders by Category</h3>
+          {catData.map(({ cat, count }) => (
+            <div key={cat} style={{ marginBottom: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#374151", marginBottom: 4 }}>
+                <span>{cat}</span><span style={{ fontWeight: 700 }}>{count}</span>
+              </div>
+              <div style={{ height: 8, background: "#f5f5f5", borderRadius: 4 }}>
+                <div style={{ height: "100%", background: "#FF6B2B", borderRadius: 4, width: `${(count / maxCat) * 100}%`, transition: "width 0.5s" }} />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Status Distribution */}
+        <div className="card">
+          <h3 style={{ fontWeight: 700, fontSize: 15, color: "#111", marginBottom: 16 }}>Order Status</h3>
+          {["Pending", "Accepted", "Purchased", "On the Way", "Delivered", "Cancelled"].map(s => {
+            const count = orders.filter(o => o.status === s).length;
+            return (
+              <div key={s} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #f5f5f5", fontSize: 13 }}>
+                <Badge status={s} />
+                <span style={{ fontWeight: 700, color: "#111" }}>{count}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Recent Orders */}
+      <div className="card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h3 style={{ fontWeight: 700, fontSize: 15, color: "#111" }}>Recent Orders</h3>
+          <button onClick={() => setAdminPage("orders")} style={{ fontSize: 13, color: "#FF6B2B", fontWeight: 600, background: "none", border: "none", cursor: "pointer" }}>View all →</button>
+        </div>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid #f0f0f0" }}>
+              {["Order ID", "Customer", "Shop", "Amount", "Status", "Time"].map(h => (
+                <th key={h} style={{ textAlign: "left", padding: "8px 10px", color: "#9ca3af", fontWeight: 600, fontSize: 12 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {orders.slice(0, 5).map(o => (
+              <tr key={o.id} className="table-row" style={{ borderBottom: "1px solid #f5f5f5" }}>
+                <td style={{ padding: "10px", fontWeight: 600, color: "#FF6B2B" }}>{o.id}</td>
+                <td style={{ padding: "10px", color: "#374151" }}>{o.customer_name}</td>
+                <td style={{ padding: "10px", color: "#374151" }}>{o.shop_name}</td>
+                <td style={{ padding: "10px", fontWeight: 700 }}>₹{(o.final_price || o.estimated_price) + o.delivery_fee}</td>
+                <td style={{ padding: "10px" }}><Badge status={o.status} /></td>
+                <td style={{ padding: "10px", color: "#9ca3af" }}>{formatTime(o.created_at)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ---- ADMIN ORDERS ----
+function AdminOrders({ showToast }) {
+  const orders = useRealtimeOrders();
+  const riders = useRealtimeRiders();
+  const [search, setSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState("All");
+  const [selected, setSelected] = useState(null);
+
+  const filtered = orders.filter(o =>
+    (filterStatus === "All" || o.status === filterStatus) &&
+    (o.id.includes(search) || o.shop_name.toLowerCase().includes(search.toLowerCase()) || o.customer_name.toLowerCase().includes(search.toLowerCase()))
+  );
+
+  const order = selected ? orders.find(o => o.id === selected) : null;
+
+  function updateStatus(id, status) {
+    updateOrder(id, { status });
+    showToast(`Order ${id} → ${status}`, "success");
+  }
+
+  function assignRider(orderId, riderId) {
+    const rider = riders.find(r => r.id === riderId);
+    updateOrder(orderId, { rider_id: riderId, rider_name: rider?.name, status: "Accepted" });
+    showToast("Rider assigned!", "success");
+  }
+
+  function cancelOrder(id) {
+    updateOrder(id, { status: "Cancelled" });
+    showToast(`Order ${id} cancelled`, "error");
+    setSelected(null);
+  }
+
+  const NEXT_STATUS = { Pending: "Accepted", Accepted: "Purchased", Purchased: "On the Way", "On the Way": "Delivered" };
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: selected ? "1fr 380px" : "1fr", gap: 20 }}>
+      <div>
+        <div style={{ marginBottom: 20 }}>
+          <h1 style={{ fontSize: 24, fontWeight: 800, color: "#111" }}>Order Management</h1>
+        </div>
+        <div className="card" style={{ marginBottom: 14 }}>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <input type="text" placeholder="Search orders..." value={search} onChange={e => setSearch(e.target.value)} style={{ flex: 1, minWidth: 200 }} />
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ width: "auto" }}>
+              <option>All</option>
+              {["Pending", "Accepted", "Purchased", "On the Way", "Delivered", "Cancelled"].map(s => <option key={s}>{s}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gap: 10 }}>
+          {filtered.map(o => (
+            <div key={o.id} className="card order-card" onClick={() => setSelected(selected === o.id ? null : o.id)} style={{ cursor: "pointer", transition: "all 0.2s", border: selected === o.id ? "2px solid #FF6B2B" : "1px solid #f0f0f0", borderRadius: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                <div>
+                  <span style={{ fontWeight: 700, color: "#FF6B2B", fontSize: 14 }}>{o.id}</span>
+                  <span style={{ color: "#9ca3af", fontSize: 13, marginLeft: 8 }}>{o.customer_name}</span>
+                </div>
+                <Badge status={o.status} />
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "#111", marginBottom: 4 }}>{o.shop_name}</div>
+              <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 8 }}>{o.item_details.slice(0, 70)}</div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#9ca3af" }}>
+                <span>{o.rider_name ? `🛵 ${o.rider_name}` : "No rider assigned"}</span>
+                <span style={{ fontWeight: 700, color: "#111", fontSize: 13 }}>₹{(o.final_price || o.estimated_price) + o.delivery_fee}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Order Detail Panel */}
+      {order && (
+        <div className="card" style={{ position: "sticky", top: 20, alignSelf: "start", maxHeight: "85vh", overflowY: "auto" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+            <h3 style={{ fontWeight: 700, fontSize: 16 }}>Order {order.id}</h3>
+            <button onClick={() => setSelected(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "#9ca3af" }}>×</button>
+          </div>
+
+          <Badge status={order.status} />
+
+          <div style={{ marginTop: 16, display: "grid", gap: 10, fontSize: 13 }}>
+            {[["Customer", order.customer_name], ["Phone", order.phone], ["Shop", order.shop_name], ["Category", order.category], ["Items", order.item_details], ["Address", order.address], ["Est. Price", `₹${order.estimated_price}`], ["Delivery Fee", `₹${order.delivery_fee}`], ["Notes", order.notes || "—"]].map(([k, v]) => (
+              <div key={k}>
+                <div style={{ color: "#9ca3af", fontSize: 11, fontWeight: 600, textTransform: "uppercase", marginBottom: 2 }}>{k}</div>
+                <div style={{ color: "#111", fontWeight: 500 }}>{v}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Assign Rider */}
+          {!order.rider_id && order.status === "Pending" && (
+            <div style={{ marginTop: 20, borderTop: "1px solid #f5f5f5", paddingTop: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#9ca3af", marginBottom: 8, textTransform: "uppercase" }}>Assign Rider</div>
+              {riders.filter(r => r.status === "online").map(r => (
+                <button key={r.id} onClick={() => assignRider(order.id, r.id)} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px", border: "1.5px solid #e5e7eb", borderRadius: 10, background: "#fff", cursor: "pointer", marginBottom: 8, fontSize: 13 }}>
+                  <Avatar initials={r.avatar} size={28} color="#1e293b" />
+                  <div style={{ textAlign: "left" }}><div style={{ fontWeight: 600 }}>{r.name}</div><div style={{ fontSize: 11, color: "#9ca3af" }}>⭐{r.rating} • {r.orders_completed} orders</div></div>
+                  <span style={{ marginLeft: "auto", color: "#10B981", fontWeight: 600 }}>Assign</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div style={{ marginTop: 16, display: "grid", gap: 8 }}>
+            {NEXT_STATUS[order.status] && (
+              <button className="btn-orange" onClick={() => updateStatus(order.id, NEXT_STATUS[order.status])}>
+                Mark as {NEXT_STATUS[order.status]} →
+              </button>
+            )}
+            {!["Delivered", "Cancelled"].includes(order.status) && (
+              <button onClick={() => cancelOrder(order.id)} style={{ padding: "10px", borderRadius: 10, border: "2px solid #FCA5A5", background: "#FEF2F2", color: "#DC2626", fontWeight: 600, cursor: "pointer", fontSize: 14 }}>
+                Cancel Order
+              </button>
+            )}
+          </div>
+
+          {order.rider_name && (
+            <div style={{ marginTop: 16, padding: 12, background: "#f8fafc", borderRadius: 10, fontSize: 13 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "#9ca3af", marginBottom: 4, textTransform: "uppercase" }}>Assigned Rider</div>
+              <div style={{ fontWeight: 600, color: "#111" }}>🛵 {order.rider_name}</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- ADMIN RIDERS ----
+function AdminRiders({ showToast }) {
+  const riders = useRealtimeRiders();
+  const orders = useRealtimeOrders();
+  const [showAdd, setShowAdd] = useState(false);
+  const [newRider, setNewRider] = useState({ name: "", phone: "", vehicle: "Bike" });
+
+  function toggleStatus(id, current) {
+    updateRider(id, { status: current === "online" ? "offline" : "online" });
+    showToast("Rider status updated", "info");
+  }
+
+  function addNewRider() {
+    if (!newRider.name || !newRider.phone) { showToast("Fill all fields", "error"); return; }
+    addRider({ id: `r${Date.now()}`, ...newRider, status: "offline", rating: 5.0, earnings: 0, orders_completed: 0, verified: false, avatar: newRider.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() });
+    showToast("Rider added!", "success");
+    setShowAdd(false);
+    setNewRider({ name: "", phone: "", vehicle: "Bike" });
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 800, color: "#111" }}>Delivery Partners</h1>
+        <button className="btn-orange" onClick={() => setShowAdd(!showAdd)}>+ Add Rider</button>
+      </div>
+
+      {showAdd && (
+        <div className="card" style={{ marginBottom: 20, border: "2px solid #FF6B2B" }}>
+          <h3 style={{ fontWeight: 700, marginBottom: 14 }}>Add New Rider</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
+            <input type="text" placeholder="Full Name" value={newRider.name} onChange={e => setNewRider(r => ({ ...r, name: e.target.value }))} />
+            <input type="tel" placeholder="Phone Number" value={newRider.phone} onChange={e => setNewRider(r => ({ ...r, phone: e.target.value }))} />
+            <select value={newRider.vehicle} onChange={e => setNewRider(r => ({ ...r, vehicle: e.target.value }))}>
+              {["Bike", "Scooter", "Cycle"].map(v => <option key={v}>{v}</option>)}
+            </select>
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button className="btn-orange" onClick={addNewRider}>Add Rider</button>
+            <button className="btn-outline" onClick={() => setShowAdd(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "grid", gap: 14 }}>
+        {riders.map(rider => {
+          const riderOrders = orders.filter(o => o.rider_id === rider.id);
+          return (
+            <div key={rider.id} className="card" style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              <Avatar initials={rider.avatar} size={48} color={rider.status === "online" ? "#10B981" : "#9ca3af"} />
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontWeight: 700, fontSize: 15, color: "#111" }}>{rider.name}</span>
+                  {rider.verified ? <span style={{ fontSize: 11, background: "#D1FAE5", color: "#065F46", padding: "2px 8px", borderRadius: 10, fontWeight: 600 }}>✓ Verified</span> : <span style={{ fontSize: 11, background: "#FEF3C7", color: "#92400E", padding: "2px 8px", borderRadius: 10, fontWeight: 600 }}>Pending</span>}
+                </div>
+                <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>📞 {rider.phone} • {rider.vehicle}</div>
+                <div style={{ display: "flex", gap: 16, marginTop: 6, fontSize: 12, color: "#9ca3af" }}>
+                  <span>⭐ {rider.rating}</span>
+                  <span>📦 {rider.orders_completed} orders</span>
+                  <span>💰 ₹{rider.earnings.toLocaleString()}</span>
+                  <span>🛵 {riderOrders.filter(o => o.status === "On the Way").length} active</span>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <div onClick={() => toggleStatus(rider.id, rider.status)} style={{ padding: "8px 16px", borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: "pointer", background: rider.status === "online" ? "#D1FAE5" : "#F3F4F6", color: rider.status === "online" ? "#065F46" : "#6B7280" }}>
+                  {rider.status === "online" ? "🟢 Online" : "⚫ Offline"}
+                </div>
+                <button onClick={() => { updateRider(rider.id, { verified: !rider.verified }); showToast("Rider updated", "info"); }} style={{ padding: "8px 14px", borderRadius: 8, border: "1.5px solid #e5e7eb", background: "#fff", fontSize: 13, cursor: "pointer", fontWeight: 600, color: "#374151" }}>
+                  {rider.verified ? "Unverify" : "Verify"}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---- ADMIN CUSTOMERS ----
+function AdminCustomers({ showToast }) {
+  const orders = useRealtimeOrders();
+  return (
+    <div>
+      <h1 style={{ fontSize: 24, fontWeight: 800, color: "#111", marginBottom: 24 }}>Customer Management</h1>
+      <div style={{ display: "grid", gap: 14 }}>
+        {DB.users.map(user => {
+          const userOrders = orders.filter(o => o.customer_id === user.id);
+          const spent = userOrders.filter(o => o.payment_status === "Paid").reduce((s, o) => s + (o.final_price || o.estimated_price) + o.delivery_fee, 0);
+          return (
+            <div key={user.id} className="card" style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              <Avatar initials={user.avatar} size={44} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 15, color: "#111" }}>{user.name}</div>
+                <div style={{ fontSize: 13, color: "#6b7280" }}>{user.email} • 📞 +91 {user.phone}</div>
+                <div style={{ display: "flex", gap: 16, marginTop: 6, fontSize: 12, color: "#9ca3af" }}>
+                  <span>📦 {userOrders.length} orders</span>
+                  <span>💰 ₹{spent.toLocaleString()} spent</span>
+                  <span>📅 Since {formatDate(user.created_at)}</span>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => showToast(`Viewing ${user.name}'s orders`, "info")} style={{ padding: "8px 14px", borderRadius: 8, border: "1.5px solid #e5e7eb", background: "#fff", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
+                  View Orders
+                </button>
+                <button onClick={() => showToast(`${user.name} blocked`, "error")} style={{ padding: "8px 14px", borderRadius: 8, border: "1.5px solid #FCA5A5", background: "#FEF2F2", fontSize: 13, cursor: "pointer", fontWeight: 600, color: "#DC2626" }}>
+                  Block
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---- ADMIN PAYMENTS ----
+function AdminPayments() {
+  const orders = useRealtimeOrders();
+  const paid = orders.filter(o => o.payment_status === "Paid");
+  const totalRev = paid.reduce((s, o) => s + (o.final_price || o.estimated_price) + o.delivery_fee, 0);
+  const totalFees = paid.reduce((s, o) => s + o.delivery_fee, 0);
+  const avgOrder = paid.length > 0 ? Math.round(totalRev / paid.length) : 0;
+
+  return (
+    <div>
+      <h1 style={{ fontSize: 24, fontWeight: 800, color: "#111", marginBottom: 24 }}>Payment Management</h1>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 24 }}>
+        {[["Total Revenue", `₹${totalRev.toLocaleString()}`, "💰"], ["Delivery Fees", `₹${totalFees}`, "🛵"], ["Avg Order", `₹${avgOrder}`, "📊"]].map(([label, value, icon]) => (
+          <div key={label} className="stat-card" style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 28, marginBottom: 8 }}>{icon}</div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: "#111" }}>{value}</div>
+            <div style={{ fontSize: 12, color: "#9ca3af", fontWeight: 600, marginTop: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
+          </div>
+        ))}
+      </div>
+      <div className="card">
+        <h3 style={{ fontWeight: 700, fontSize: 15, marginBottom: 16 }}>Transaction History</h3>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid #f0f0f0" }}>
+              {["Order ID", "Customer", "Shop", "Product", "Delivery", "Total", "Status"].map(h => (
+                <th key={h} style={{ textAlign: "left", padding: "8px 10px", color: "#9ca3af", fontWeight: 600, fontSize: 12 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {orders.map(o => (
+              <tr key={o.id} className="table-row" style={{ borderBottom: "1px solid #f5f5f5" }}>
+                <td style={{ padding: "10px", fontWeight: 600, color: "#FF6B2B" }}>{o.id}</td>
+                <td style={{ padding: "10px" }}>{o.customer_name}</td>
+                <td style={{ padding: "10px" }}>{o.shop_name}</td>
+                <td style={{ padding: "10px" }}>₹{o.final_price || o.estimated_price}</td>
+                <td style={{ padding: "10px" }}>₹{o.delivery_fee}</td>
+                <td style={{ padding: "10px", fontWeight: 700 }}>₹{(o.final_price || o.estimated_price) + o.delivery_fee}</td>
+                <td style={{ padding: "10px" }}><span style={{ background: o.payment_status === "Paid" ? "#D1FAE5" : "#FEF3C7", color: o.payment_status === "Paid" ? "#065F46" : "#92400E", padding: "3px 10px", borderRadius: 10, fontSize: 11, fontWeight: 600 }}>{o.payment_status}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ---- ADMIN NOTIFICATIONS ----
+function AdminNotifications({ showToast }) {
+  const [msg, setMsg] = useState("");
+  const [target, setTarget] = useState("all");
+  const [sent, setSent] = useState([
+    { id: 1, to: "All Customers", message: "Track your order in real-time with Bringo!", time: "10:30 AM", type: "info" },
+    { id: 2, to: "All Riders", message: "New bonus: ₹20 extra per delivery today!", time: "9:00 AM", type: "success" },
+  ]);
+
+  function sendNotif() {
+    if (!msg) { showToast("Enter a message", "error"); return; }
+    setSent(s => [{ id: Date.now(), to: target === "all" ? "All Customers" : target === "riders" ? "All Riders" : "All Users", message: msg, time: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }), type: "info" }, ...s]);
+    showToast("Notification sent!", "success");
+    setMsg("");
+  }
+
+  return (
+    <div>
+      <h1 style={{ fontSize: 24, fontWeight: 800, color: "#111", marginBottom: 24 }}>Notifications</h1>
+      <div className="card" style={{ marginBottom: 20, border: "2px solid #FF6B2B" }}>
+        <h3 style={{ fontWeight: 700, marginBottom: 14 }}>Send Notification</h3>
+        <div style={{ display: "grid", gap: 12 }}>
+          <select value={target} onChange={e => setTarget(e.target.value)}>
+            <option value="all">All Customers</option>
+            <option value="riders">All Riders</option>
+            <option value="everyone">Everyone</option>
+          </select>
+          <textarea rows={3} placeholder="Notification message..." value={msg} onChange={e => setMsg(e.target.value)} style={{ resize: "none" }} />
+          <button className="btn-orange" onClick={sendNotif}>Send Notification 🔔</button>
+        </div>
+      </div>
+
+      <div className="card">
+        <h3 style={{ fontWeight: 700, marginBottom: 16 }}>Sent Notifications</h3>
+        {sent.map(n => (
+          <div key={n.id} style={{ display: "flex", gap: 12, padding: "12px 0", borderBottom: "1px solid #f5f5f5" }}>
+            <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#FFF5F0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>🔔</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, color: "#9ca3af", marginBottom: 2 }}>To: <span style={{ fontWeight: 600, color: "#374151" }}>{n.to}</span> • {n.time}</div>
+              <div style={{ fontSize: 14, color: "#111" }}>{n.message}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const DB = {
   users: [

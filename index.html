@@ -160,4 +160,49 @@ function CustomerApp({ authUser, page, setPage, setAuthUser }) {
         <div style={{ marginLeft: "auto", display: "flex", gap: 15 }}>
           <span onClick={() => setPage("home")} style={{ cursor: "pointer" }}>Home</span>
           <span onClick={() => setPage("order")} style={{ cursor: "pointer" }}>Order</span>
-          {!authUser ? <button onClick={() => setAuthUser(DB.users[0])} className="btn-orange">Login</button> : <span>Hi
+          {!authUser ? <button onClick={() => setAuthUser(DB.users[0])} className="btn-orange">Login</button> : <span>Hi, {authUser.name}</span>}
+        </div>
+      </nav>
+      <div style={{ padding: 20 }}>
+        {page === "home" ? <div className="card"><h1>Welcome to Bringo</h1><p>Order anything nearby!</p></div> : <PlaceOrderPage authUser={authUser} setPage={setPage} />}
+      </div>
+    </div>
+  );
+}
+
+function PlaceOrderPage({ authUser, setPage }) {
+  return (
+    <div className="card" style={{ maxWidth: 500, margin: "0 auto" }}>
+      <h2>Place New Order</h2>
+      <input placeholder="Shop Name" style={{ width: "100%", padding: 10, margin: "10px 0" }} />
+      <textarea placeholder="Items" style={{ width: "100%", padding: 10, margin: "10px 0" }} />
+      <button className="btn-orange" onClick={() => { alert("Order placed!"); setPage("home"); }}>Submit Order</button>
+    </div>
+  );
+}
+
+function AdminApp({ adminAuth, setAdminAuth }) {
+  if (!adminAuth) return <div style={{ padding: 100, textAlign: "center" }}><button onClick={() => setAdminAuth(true)} className="btn-orange">Login as Admin</button></div>;
+  return (
+    <div style={{ display: "flex" }}>
+      <div style={{ width: 200, background: "#333", color: "#fff", minHeight: "100vh", padding: 20 }}>
+        <h3>Admin Panel</h3>
+        <p>Dashboard</p>
+        <p>Orders</p>
+        <p onClick={() => setAdminAuth(false)}>Logout</p>
+      </div>
+      <div style={{ flex: 1, padding: 30 }}>
+        <h1>Admin Dashboard</h1>
+        <div className="card">Active Orders: {DB.orders.length}</div>
+      </div>
+    </div>
+  );
+}
+
+        // THE ON SWITCH - THIS RENDERS THE APP
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<BringoPlatform />);
+
+    </script>
+</body>
+</html>
